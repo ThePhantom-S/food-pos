@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import {
   LayoutDashboard,
@@ -18,6 +18,7 @@ import {
   Grid3X3,
   ChefHat,
   Clipboard,
+  Loader2,
 } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -38,27 +39,21 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-// Mock data
-const mockOrders = [
-  { id: 1, tableNo: 3, items: "Masala Dosa, Filter Coffee", server: "Priya", status: "Preparing", time: "12 min" },
-  { id: 2, tableNo: 7, items: "Idli Sambar, Vada", server: "Kumar", status: "Ready", time: "8 min" },
-  { id: 3, tableNo: 1, items: "Uttapam, Curd Rice", server: "Lakshmi", status: "Served", time: "25 min" },
-  { id: 4, tableNo: 5, items: "Pongal, Kesari", server: "Ravi", status: "New", time: "2 min" },
-  { id: 5, tableNo: 9, items: "Rava Dosa, Tea", server: "Priya", status: "Preparing", time: "6 min" },
-]
+type DashboardTable = {
+  id: number
+  status: string
+  server: string | null
+  guests: number
+}
 
-const mockTables = [
-  { id: 1, status: "Occupied", server: "Lakshmi", guests: 4 },
-  { id: 2, status: "Available", server: null, guests: 0 },
-  { id: 3, status: "Occupied", server: "Priya", guests: 2 },
-  { id: 4, status: "Cleaning", server: null, guests: 0 },
-  { id: 5, status: "Occupied", server: "Ravi", guests: 3 },
-  { id: 6, status: "Available", server: null, guests: 0 },
-  { id: 7, status: "Occupied", server: "Kumar", guests: 2 },
-  { id: 8, status: "Available", server: null, guests: 0 },
-  { id: 9, status: "Occupied", server: "Priya", guests: 1 },
-  { id: 10, status: "Cleaning", server: null, guests: 0 },
-]
+type DashboardOrder = {
+  id: string
+  tableNo: number
+  items: string
+  server: string
+  status: string
+  time: string
+}
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/" },
@@ -71,9 +66,9 @@ const navItems = [
 
 function getStatusColor(status: string) {
   switch (status) {
-    case "Occupied":
+    case "OCCUPIED":
       return "bg-primary/10 text-primary border-primary/20"
-    case "Available":
+    case "AVAILABLE":
       return "bg-emerald-50 text-emerald-700 border-emerald-200"
     case "Cleaning":
       return "bg-amber-50 text-amber-700 border-amber-200"
@@ -84,11 +79,11 @@ function getStatusColor(status: string) {
 
 function getOrderStatusVariant(status: string): "default" | "secondary" | "destructive" | "outline" {
   switch (status) {
-    case "New":
+    case "NEW":
       return "destructive"
-    case "Preparing":
+    case "PREPARING":
       return "default"
-    case "Ready":
+    case "READY":
       return "secondary"
     default:
       return "outline"
@@ -97,6 +92,38 @@ function getOrderStatusVariant(status: string): "default" | "secondary" | "destr
 
 export default function AdminDashboard() {
   const [selectedBranch, setSelectedBranch] = useState("Anna Nagar")
+  const [tables, setTables] = useState<DashboardTable[]>([])
+  const [orders, setOrders] = useState<DashboardOrder[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [tablesRes, ordersRes] = await Promise.all([
+          fetch('/api/tables'),
+          fetch('/api/orders')
+        ])
+        if (tablesRes.ok) {
+          const tablesData: DashboardTable[] = await tablesRes.json()
+          setTables(tablesData)
+        }
+        if (ordersRes.ok) {
+          const ordersData: DashboardOrder[] = await ordersRes.json()
+          setOrders(ordersData)
+        }
+      } catch (error) {
+        console.error('Failed to fetch dashboard data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 30000) // Refresh every 30s
+    return () => clearInterval(interval)
+  }, [])
+
+  const occupiedTables = tables.filter(t => t.status === 'OCCUPIED').length
 
   return (
     <div className="flex h-screen bg-background">
@@ -162,7 +189,7 @@ export default function AdminDashboard() {
               <p className="text-xs text-muted-foreground">Superuser</p>
             </div>
             <Avatar>
-              <AvatarImage src="/placeholder-avatar.jpg" alt="Admin" />
+              <AvatarImage src="/placeholder-user.jpg" alt="Admin" />
               <AvatarFallback className="bg-primary text-primary-foreground">AD</AvatarFallback>
             </Avatar>
           </div>
@@ -170,7 +197,7 @@ export default function AdminDashboard() {
 
         {/* Dashboard Content */}
         <main className="flex-1 overflow-auto p-6">
-          {/* Metric Cards */}
+          {/* Metric Cards - Mock for now, aggregate later */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <Card>
               <CardContent className="p-6">
@@ -196,7 +223,7 @@ export default function AdminDashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground font-medium">Active Tables</p>
-                    <p className="text-2xl font-bold text-card-foreground mt-1">5 / 10</p>
+                    <p className="text-2xl font-bold text-card-foreground mt-1">{occupiedTables} / 10</p>
                   </div>
                   <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center">
                     <Grid3X3 className="h-6 w-6 text-primary" />
@@ -239,44 +266,52 @@ export default function AdminDashboard() {
             <div className="lg:col-span-2">
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">Live Orders</CardTitle>
+                  <CardTitle className="text-lg">Live Orders ({orders.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Table</TableHead>
-                        <TableHead>Items</TableHead>
-                        <TableHead>Server</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Time</TableHead>
-                        <TableHead className="w-10"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {mockOrders.map((order) => (
-                        <TableRow key={order.id}>
-                          <TableCell className="font-medium">#{order.tableNo}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{order.items}</TableCell>
-                          <TableCell>{order.server}</TableCell>
-                          <TableCell>
-                            <Badge variant={getOrderStatusVariant(order.status)}>{order.status}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <span className="flex items-center gap-1 text-muted-foreground">
-                              <Clock className="h-3.5 w-3.5" />
-                              {order.time}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
+                  {loading ? (
+                    <div className="flex items-center justify-center p-8">
+                      <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                  ) : orders.length === 0 ? (
+                    <p className="text-muted-foreground text-center py-8">No active orders</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Table</TableHead>
+                          <TableHead>Items</TableHead>
+                          <TableHead>Server</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Time</TableHead>
+                          <TableHead className="w-10"></TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {orders.map((order) => (
+                          <TableRow key={order.id}>
+                            <TableCell className="font-medium">#{order.tableNo}</TableCell>
+                            <TableCell className="max-w-[200px] truncate">{order.items}</TableCell>
+                            <TableCell>{order.server}</TableCell>
+                            <TableCell>
+                              <Badge variant={getOrderStatusVariant(order.status)}>{order.status}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <span className="flex items-center gap-1 text-muted-foreground">
+                                <Clock className="h-3.5 w-3.5" />
+                                {order.time}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="icon" className="h-8 w-8">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -285,28 +320,36 @@ export default function AdminDashboard() {
             <div>
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">Table Status</CardTitle>
+                  <CardTitle className="text-lg">Table Status ({tables.length})</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    {mockTables.map((table) => (
-                      <div
-                        key={table.id}
-                        className={`p-3 rounded-lg border ${getStatusColor(table.status)}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold">T{table.id}</span>
-                          {table.guests > 0 && (
-                            <span className="text-xs opacity-75">{table.guests} guests</span>
+                  {loading ? (
+                    <div className="space-y-3">
+                      {[1,2,3,4,5].map(i => (
+                        <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      {tables.map((table) => (
+                        <div
+                          key={table.id}
+                          className={`p-3 rounded-lg border ${getStatusColor(table.status)}`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-semibold">T{table.id}</span>
+                            {table.guests > 0 && (
+                              <span className="text-xs opacity-75">{table.guests} guests</span>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium">{table.status}</p>
+                          {table.server && (
+                            <p className="text-xs opacity-75 mt-0.5">{table.server}</p>
                           )}
                         </div>
-                        <p className="text-xs font-medium">{table.status}</p>
-                        {table.server && (
-                          <p className="text-xs opacity-75 mt-0.5">{table.server}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>

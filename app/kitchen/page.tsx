@@ -9,78 +9,29 @@ import {
   Clock,
   ChefHat,
   CheckCircle2,
+  Loader2,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { toast } from "sonner"
 
-// Mock data for kitchen orders
-const initialOrders = [
-  {
-    id: 1,
-    tableNo: 3,
-    status: "new",
-    createdAt: Date.now() - 2 * 60 * 1000,
-    items: [
-      { name: "Masala Dosa", qty: 2, customizations: "Extra chutney" },
-      { name: "Filter Coffee", qty: 2, customizations: null },
-    ],
-  },
-  {
-    id: 2,
-    tableNo: 7,
-    status: "new",
-    createdAt: Date.now() - 5 * 60 * 1000,
-    items: [
-      { name: "Idli Sambar", qty: 1, customizations: null },
-      { name: "Medu Vada", qty: 2, customizations: "Crispy" },
-    ],
-  },
-  {
-    id: 3,
-    tableNo: 1,
-    status: "preparing",
-    createdAt: Date.now() - 12 * 60 * 1000,
-    items: [
-      { name: "Ghee Roast Dosa", qty: 2, customizations: "Extra ghee" },
-      { name: "Curd Rice", qty: 1, customizations: null },
-    ],
-  },
-  {
-    id: 4,
-    tableNo: 5,
-    status: "preparing",
-    createdAt: Date.now() - 8 * 60 * 1000,
-    items: [
-      { name: "Pongal", qty: 2, customizations: "More cashews" },
-      { name: "Uttapam", qty: 1, customizations: "Extra onion" },
-    ],
-  },
-  {
-    id: 5,
-    tableNo: 9,
-    status: "ready",
-    createdAt: Date.now() - 18 * 60 * 1000,
-    items: [
-      { name: "Rava Dosa", qty: 1, customizations: "Without onion" },
-      { name: "Mysore Pak", qty: 2, customizations: null },
-    ],
-  },
-  {
-    id: 6,
-    tableNo: 2,
-    status: "ready",
-    createdAt: Date.now() - 22 * 60 * 1000,
-    items: [
-      { name: "Chicken 65", qty: 1, customizations: "Extra spicy" },
-      { name: "Lemon Rice", qty: 1, customizations: null },
-    ],
-  },
-]
+type KitchenItem = {
+  name: string
+  qty: number
+  customizations: string | null
+}
 
-type Order = (typeof initialOrders)[0]
+type KitchenOrder = {
+  id: string
+  tableNo: number
+  status: string
+  createdAt: string
+  fullItems: KitchenItem[]
+}
 
-function formatTimeElapsed(createdAt: number) {
+function formatTimeElapsed(createdAtIso: string) {
+  const createdAt = new Date(createdAtIso).getTime()
   const seconds = Math.floor((Date.now() - createdAt) / 1000)
   const minutes = Math.floor(seconds / 60)
   if (minutes < 1) return "Just now"
@@ -98,46 +49,77 @@ function getCurrentTime() {
 }
 
 export default function KitchenDisplaySystem() {
-  const [orders, setOrders] = useState<Order[]>(initialOrders)
+  const [orders, setOrders] = useState<KitchenOrder[]>([])
   const [currentTime, setCurrentTime] = useState(getCurrentTime())
+  const [loading, setLoading] = useState(true)
   const [, setTick] = useState(0)
 
   // Update time every second
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(getCurrentTime())
-      setTick((t) => t + 1) // Force re-render for elapsed times
+      setTick((t) => t + 1)
     }, 1000)
     return () => clearInterval(timer)
   }, [])
 
-  // Auto-refresh every 30 seconds (simulate new orders)
+  // Fetch orders
   useEffect(() => {
-    const refreshTimer = setInterval(() => {
-      // In a real app, this would fetch new orders from the API
-      console.log("Auto-refreshing orders...")
-    }, 30000)
-    return () => clearInterval(refreshTimer)
+    fetchOrders()
+    const refresh = setInterval(fetchOrders, 10000) // 10s real-time
+    return () => clearInterval(refresh)
   }, [])
 
-  const moveOrder = (orderId: number, newStatus: "new" | "preparing" | "ready" | "served") => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId ? { ...order, status: newStatus } : order
-      ).filter((order) => order.status !== "served")
-    )
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch('/api/orders')
+      if (res.ok) {
+        const data: KitchenOrder[] = await res.json()
+        setOrders(data)
+      }
+    } catch (error) {
+      console.error('Failed to fetch orders:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const newOrders = orders.filter((o) => o.status === "new")
-  const preparingOrders = orders.filter((o) => o.status === "preparing")
-  const readyOrders = orders.filter((o) => o.status === "ready")
+  const updateOrderStatus = async (orderId: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      })
+      if (res.ok) {
+        toast.success(`Order ${newStatus.toLowerCase()}!`)
+        fetchOrders() // Refresh
+      } else {
+        toast.error('Failed to update status')
+      }
+    } catch (error) {
+      toast.error('Network error')
+    }
+  }
+
+  const newOrders = orders.filter((o) => o.status === "NEW")
+  const preparingOrders = orders.filter((o) => o.status === "PREPARING")
+  const readyOrders = orders.filter((o) => o.status === "READY")
   const pendingCount = newOrders.length + preparingOrders.length
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0f1419] flex items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-[#0f1419] text-neutral-100">
       {/* Top Bar */}
       <header className="bg-[#1a2129] border-b border-neutral-800 px-6 py-4 sticky top-0 z-10">
-        <div className="flex items-center justify-between max-w-full">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" size="icon" asChild className="text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800">
               <Link href="/">
@@ -173,8 +155,8 @@ export default function KitchenDisplaySystem() {
 
       {/* Kanban Layout */}
       <main className="p-6">
-        <div className="grid grid-cols-3 gap-6 max-w-full">
-          {/* New Orders Column */}
+        <div className="grid grid-cols-3 gap-6">
+          {/* New Orders */}
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="h-3 w-3 rounded-full bg-red-500" />
@@ -190,7 +172,7 @@ export default function KitchenDisplaySystem() {
                   order={order}
                   borderColor="border-red-500"
                   bgColor="bg-red-500/5"
-                  onMove={() => moveOrder(order.id, "preparing")}
+                  onMove={() => updateOrderStatus(order.id, "PREPARING")}
                   actionLabel="Start Preparing"
                 />
               ))}
@@ -200,7 +182,7 @@ export default function KitchenDisplaySystem() {
             </div>
           </div>
 
-          {/* Preparing Column */}
+          {/* Preparing */}
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="h-3 w-3 rounded-full bg-amber-500" />
@@ -216,7 +198,7 @@ export default function KitchenDisplaySystem() {
                   order={order}
                   borderColor="border-amber-500"
                   bgColor="bg-amber-500/5"
-                  onMove={() => moveOrder(order.id, "ready")}
+                  onMove={() => updateOrderStatus(order.id, "READY")}
                   actionLabel="Mark Ready"
                 />
               ))}
@@ -226,7 +208,7 @@ export default function KitchenDisplaySystem() {
             </div>
           </div>
 
-          {/* Ready to Serve Column */}
+          {/* Ready */}
           <div>
             <div className="flex items-center gap-3 mb-4">
               <div className="h-3 w-3 rounded-full bg-emerald-500" />
@@ -242,7 +224,7 @@ export default function KitchenDisplaySystem() {
                   order={order}
                   borderColor="border-emerald-500"
                   bgColor="bg-emerald-500/5"
-                  onMove={() => moveOrder(order.id, "served")}
+                  onMove={() => updateOrderStatus(order.id, "SERVED")}
                   actionLabel="Served"
                   actionIcon={<CheckCircle2 className="h-4 w-4" />}
                 />
@@ -266,7 +248,7 @@ function OrderCard({
   actionLabel,
   actionIcon,
 }: {
-  order: Order
+  order: KitchenOrder
   borderColor: string
   bgColor: string
   onMove: () => void
@@ -288,7 +270,7 @@ function OrderCard({
       </CardHeader>
       <CardContent>
         <ul className="space-y-2 mb-4">
-          {order.items.map((item, idx) => (
+          {order.fullItems.map((item, idx) => (
             <li key={idx} className="text-neutral-200">
               <span className="font-medium">
                 {item.qty}x {item.name}
@@ -304,7 +286,7 @@ function OrderCard({
         <Button
           onClick={onMove}
           className="w-full gap-2"
-          variant={order.status === "ready" ? "outline" : "default"}
+          variant={order.status === "READY" ? "outline" : "default"}
         >
           {actionIcon || <ArrowRight className="h-4 w-4" />}
           {actionLabel}
@@ -321,3 +303,4 @@ function EmptyColumn({ message }: { message: string }) {
     </div>
   )
 }
+
