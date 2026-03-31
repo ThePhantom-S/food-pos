@@ -46,11 +46,11 @@ async function main() {
   console.log('✅ Seeded 5 categories')
 
   // Fetch category IDs
-  const tiffinCat = await prisma.category.findUnique({ where: { name: 'Tiffin' } })!
-  const riceCat = await prisma.category.findUnique({ where: { name: 'Rice' } })!
-  const startersCat = await prisma.category.findUnique({ where: { name: 'Starters' } })!
-  const beveragesCat = await prisma.category.findUnique({ where: { name: 'Beverages' } })!
-  const breakfastCat = await prisma.category.findUnique({ where: { name: 'Breakfast Specials' } })!
+  const tiffinCat = await prisma.category.findUniqueOrThrow({ where: { name: 'Tiffin' } })
+  const riceCat = await prisma.category.findUniqueOrThrow({ where: { name: 'Rice' } })
+  const startersCat = await prisma.category.findUniqueOrThrow({ where: { name: 'Starters' } })
+  const beveragesCat = await prisma.category.findUniqueOrThrow({ where: { name: 'Beverages' } })
+  const breakfastCat = await prisma.category.findUniqueOrThrow({ where: { name: 'Breakfast Specials' } })
 
   // Seed Items
   const items = [

@@ -5,10 +5,7 @@ import Link from "next/link"
 import {
   LayoutDashboard,
   UtensilsCrossed,
-  Users,
   Receipt,
-  BarChart3,
-  Settings,
   ChevronDown,
   Clock,
   IndianRupee,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -14,36 +14,21 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 
-// Mock data for server's tables
-const mockMyTables = [
-  { id: 1, tableNo: 3, guests: 4, status: "Order Placed", items: 4 },
-  { id: 2, tableNo: 7, guests: 2, status: "Waiting for Food", items: 3 },
-  { id: 3, tableNo: 9, guests: 1, status: "Served", items: 2 },
-]
-
-const mockAvailableTables = [
-  { id: 1, tableNo: 2, capacity: 4 },
-  { id: 2, tableNo: 4, capacity: 2 },
-  { id: 3, tableNo: 6, capacity: 6 },
-  { id: 4, tableNo: 8, capacity: 4 },
-  { id: 5, tableNo: 10, capacity: 8 },
-]
-
-const mockStats = {
-  tablesServed: 12,
-  ordersTaken: 28,
-  avgServiceTime: "18 min",
+type ServerTable = {
+  id: number
+  status: "AVAILABLE" | "OCCUPIED" | "CLEANING"
+  activeOrderId: string | null
 }
 
 function getStatusBadgeVariant(status: string): "default" | "secondary" | "outline" {
   switch (status) {
-    case "Order Placed":
+    case "OCCUPIED":
       return "default"
-    case "Waiting for Food":
+    case "CLEANING":
       return "secondary"
-    case "Served":
+    case "AVAILABLE":
       return "outline"
     default:
       return "outline"
@@ -51,23 +36,38 @@ function getStatusBadgeVariant(status: string): "default" | "secondary" | "outli
 }
 
 export default function ServerDashboard() {
-  const [myTables, setMyTables] = useState(mockMyTables)
-  const [availableTables, setAvailableTables] = useState(mockAvailableTables)
+  const [tables, setTables] = useState<ServerTable[]>([])
 
-  const handleClaimTable = (tableNo: number) => {
-    const table = availableTables.find((t) => t.tableNo === tableNo)
-    if (table) {
-      setAvailableTables(availableTables.filter((t) => t.tableNo !== tableNo))
-      setMyTables([
-        ...myTables,
-        {
-          id: Date.now(),
-          tableNo: table.tableNo,
-          guests: 0,
-          status: "Waiting for Guests",
-          items: 0,
-        },
-      ])
+  useEffect(() => {
+    const fetchTables = async () => {
+      try {
+        const res = await fetch("/api/tables", { cache: "no-store" })
+        if (!res.ok) return
+        const data: ServerTable[] = await res.json()
+        setTables(data)
+      } catch {
+        // ignore
+      }
+    }
+
+    fetchTables()
+    const t = setInterval(fetchTables, 10000)
+    return () => clearInterval(t)
+  }, [])
+
+  const myTables = useMemo(() => tables.filter((t) => t.status === "OCCUPIED"), [tables])
+  const availableTables = useMemo(() => tables.filter((t) => t.status === "AVAILABLE"), [tables])
+  const cleaningTables = useMemo(() => tables.filter((t) => t.status === "CLEANING"), [tables])
+
+  const setTableStatus = async (tableId: number, status: ServerTable["status"]) => {
+    try {
+      await fetch(`/api/tables/${tableId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      })
+    } catch {
+      // ignore
     }
   }
 
@@ -105,8 +105,8 @@ export default function ServerDashboard() {
               <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
                 <Users className="h-5 w-5 text-primary" />
               </div>
-              <p className="text-2xl font-bold text-card-foreground">{mockStats.tablesServed}</p>
-              <p className="text-xs text-muted-foreground">Tables Served Today</p>
+              <p className="text-2xl font-bold text-card-foreground">{myTables.length}</p>
+              <p className="text-xs text-muted-foreground">Occupied Tables</p>
             </CardContent>
           </Card>
           <Card>
@@ -114,8 +114,8 @@ export default function ServerDashboard() {
               <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
                 <ClipboardList className="h-5 w-5 text-primary" />
               </div>
-              <p className="text-2xl font-bold text-card-foreground">{mockStats.ordersTaken}</p>
-              <p className="text-xs text-muted-foreground">Orders Taken</p>
+              <p className="text-2xl font-bold text-card-foreground">{availableTables.length}</p>
+              <p className="text-xs text-muted-foreground">Available Tables</p>
             </CardContent>
           </Card>
           <Card>
@@ -123,8 +123,8 @@ export default function ServerDashboard() {
               <div className="h-10 w-10 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-2">
                 <Timer className="h-5 w-5 text-primary" />
               </div>
-              <p className="text-2xl font-bold text-card-foreground">{mockStats.avgServiceTime}</p>
-              <p className="text-xs text-muted-foreground">Avg Service Time</p>
+              <p className="text-2xl font-bold text-card-foreground">{cleaningTables.length}</p>
+              <p className="text-xs text-muted-foreground">Cleaning</p>
             </CardContent>
           </Card>
         </div>
@@ -139,23 +139,31 @@ export default function ServerDashboard() {
                   <div className="h-2 bg-primary" />
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-3">
-                      <span className="text-2xl font-bold text-card-foreground">T{table.tableNo}</span>
+                      <span className="text-2xl font-bold text-card-foreground">T{table.id}</span>
                       <Badge variant={getStatusBadgeVariant(table.status)}>{table.status}</Badge>
                     </div>
                     <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
                       <span className="flex items-center gap-1">
                         <Users className="h-4 w-4" />
-                        {table.guests} guests
+                        —
                       </span>
                       <span className="flex items-center gap-1">
                         <ClipboardList className="h-4 w-4" />
-                        {table.items} items
+                        —
                       </span>
                     </div>
-                    <Button className="w-full gap-2" variant="outline">
-                      <Eye className="h-4 w-4" />
-                      View Order
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button className="flex-1 gap-2" variant="outline" asChild disabled={!table.activeOrderId}>
+                        <Link href={table.activeOrderId ? `/billing?orderId=${table.activeOrderId}` : "#"}>
+                          <Eye className="h-4 w-4" />
+                          View
+                        </Link>
+                      </Button>
+                      <Button className="flex-1 gap-2" variant="secondary" onClick={() => setTableStatus(table.id, "CLEANING")}>
+                        <Hand className="h-4 w-4" />
+                        Cleaning
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -188,15 +196,13 @@ export default function ServerDashboard() {
                 <Card key={table.id} className="overflow-hidden hover:shadow-md transition-shadow">
                   <CardContent className="p-4 text-center">
                     <div className="h-16 w-16 bg-emerald-50 border-2 border-emerald-200 rounded-xl flex items-center justify-center mx-auto mb-3">
-                      <span className="text-xl font-bold text-emerald-700">T{table.tableNo}</span>
+                      <span className="text-xl font-bold text-emerald-700">T{table.id}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground mb-3">
-                      {table.capacity} seats
-                    </p>
+                    <p className="text-sm text-muted-foreground mb-3">Available</p>
                     <Button
                       size="sm"
                       className="w-full gap-2"
-                      onClick={() => handleClaimTable(table.tableNo)}
+                      onClick={() => setTableStatus(table.id, "OCCUPIED")}
                     >
                       <Hand className="h-4 w-4" />
                       Claim

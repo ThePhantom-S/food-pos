@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -56,26 +56,28 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
-
-// Mock data
-const initialDishes = [
-  { id: 1, name: "Masala Dosa", category: "Tiffin", price: 120, veg: true, available: true, description: "Crispy rice crepe with spiced potato filling", ingredients: [{ name: "Rice batter", allergen: false }, { name: "Potato", allergen: false }, { name: "Onion", allergen: false }], customizations: [{ group: "Extras", options: [{ name: "Extra Chutney", price: 20 }, { name: "Extra Sambar", price: 25 }] }] },
-  { id: 2, name: "Idli Sambar", category: "Tiffin", price: 80, veg: true, available: true, description: "Steamed rice cakes with lentil stew", ingredients: [{ name: "Rice", allergen: false }, { name: "Urad dal", allergen: false }], customizations: [] },
-  { id: 3, name: "Chicken 65", category: "Starters", price: 220, veg: false, available: true, description: "Spicy deep-fried chicken", ingredients: [{ name: "Chicken", allergen: false }, { name: "Spices", allergen: false }], customizations: [{ group: "Spice Level", options: [{ name: "Mild", price: 0 }, { name: "Spicy", price: 0 }, { name: "Extra Spicy", price: 0 }] }] },
-  { id: 4, name: "Filter Coffee", category: "Beverages", price: 40, veg: true, available: true, description: "Traditional South Indian coffee", ingredients: [{ name: "Coffee", allergen: false }, { name: "Milk", allergen: true }], customizations: [] },
-  { id: 5, name: "Paneer Pakora", category: "Starters", price: 160, veg: true, available: false, description: "Crispy fried cottage cheese fritters", ingredients: [{ name: "Paneer", allergen: true }, { name: "Gram flour", allergen: true }], customizations: [] },
-  { id: 6, name: "Curd Rice", category: "Rice", price: 90, veg: true, available: true, description: "Cool and creamy yogurt rice", ingredients: [{ name: "Rice", allergen: false }, { name: "Curd", allergen: true }], customizations: [] },
-]
+import { toast } from "sonner"
 
 type Ingredient = { name: string; allergen: boolean }
 type CustomizationOption = { name: string; price: number }
 type CustomizationGroup = { group: string; options: CustomizationOption[] }
-type Dish = (typeof initialDishes)[0]
 
-const categories = ["Tiffin", "Rice", "Starters", "Beverages", "Desserts"]
+type Dish = {
+  id: string
+  name: string
+  category: string
+  price: number
+  veg: boolean
+  available: boolean
+  description: string
+  ingredients: Ingredient[]
+  customizations: CustomizationGroup[]
+}
 
 export default function MenuManagementPage() {
-  const [dishes, setDishes] = useState(initialDishes)
+  const [dishes, setDishes] = useState<Dish[]>([])
+  const [menuCategories, setMenuCategories] = useState<string[]>([])
+  const [menuLoading, setMenuLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [editingDish, setEditingDish] = useState<Dish | null>(null)
   const [isAddingNew, setIsAddingNew] = useState(false)
@@ -96,6 +98,66 @@ export default function MenuManagementPage() {
   const [newOptionPrice, setNewOptionPrice] = useState("")
   const [selectedGroupIndex, setSelectedGroupIndex] = useState<number | null>(null)
 
+  const defaultCategory = menuCategories[0] ?? "Tiffin"
+
+  const fetchMenu = async () => {
+    try {
+      setMenuLoading(true)
+      const res = await fetch("/api/menu", { cache: "no-store" })
+      if (!res.ok) {
+        toast.error("Failed to fetch menu")
+        return
+      }
+
+      const data = (await res.json()) as Array<{
+        name: string
+        items: Array<{
+          id: string
+          name: string
+          price: number
+          veg: boolean
+          description: string
+          ingredients?: string[]
+        }>
+      }>
+
+      const nextCategories = data.map((c) => c.name)
+      const nextDefaultCategory = nextCategories[0] ?? "Tiffin"
+      setMenuCategories(nextCategories)
+
+      const nextDishes: Dish[] = data.flatMap((cat) =>
+        cat.items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          category: cat.name,
+          price: item.price,
+          veg: item.veg,
+          available: true,
+          description: item.description ?? "",
+          ingredients: (item.ingredients ?? []).map((i) => ({ name: i, allergen: false })),
+          customizations: [],
+        }))
+      )
+
+      setDishes(nextDishes)
+
+      // If the currently selected form category is no longer valid, reset it.
+      setFormData((prev) => ({
+        ...prev,
+        category: nextCategories.includes(prev.category) ? prev.category : nextDefaultCategory,
+      }))
+    } catch {
+      toast.error("Failed to fetch menu")
+    } finally {
+      setMenuLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchMenu()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const filteredDishes =
     selectedCategory === "All"
       ? dishes
@@ -104,7 +166,7 @@ export default function MenuManagementPage() {
   const resetForm = () => {
     setFormData({
       name: "",
-      category: "Tiffin",
+      category: defaultCategory,
       price: "",
       description: "",
       veg: true,
@@ -200,35 +262,87 @@ export default function MenuManagementPage() {
     setFormData({ ...formData, customizations: updated })
   }
 
-  const handleSave = () => {
-    const dishData = {
-      name: formData.name,
-      category: formData.category,
-      price: parseFloat(formData.price) || 0,
-      description: formData.description,
+  const handleSave = async () => {
+    const name = formData.name.trim()
+    const description = formData.description
+    const category = formData.category
+    const priceNum = parseFloat(formData.price)
+
+    if (!name) {
+      toast.error("Dish name is required")
+      return
+    }
+    if (!category) {
+      toast.error("Category is required")
+      return
+    }
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      toast.error("Invalid price")
+      return
+    }
+
+    const payload = {
+      name,
+      category,
+      price: priceNum,
       veg: formData.veg,
-      available: true,
-      ingredients: formData.ingredients,
-      customizations: formData.customizations,
+      description: description || null,
     }
 
-    if (isAddingNew) {
-      setDishes([...dishes, { ...dishData, id: Date.now() }])
-    } else if (editingDish) {
-      setDishes(dishes.map((d) => (d.id === editingDish.id ? { ...d, ...dishData } : d)))
+    try {
+      if (isAddingNew) {
+        const res = await fetch("/api/menu", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          toast.error("Failed to add dish")
+          return
+        }
+        toast.success("Dish added")
+      } else if (editingDish) {
+        const res = await fetch(`/api/menu/items/${editingDish.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          toast.error("Failed to update dish")
+          return
+        }
+        toast.success("Dish updated")
+      }
+
+      await fetchMenu()
+      resetForm()
+      setEditingDish(null)
+      setIsAddingNew(false)
+    } catch {
+      toast.error("Network error")
     }
-
-    resetForm()
-    setEditingDish(null)
-    setIsAddingNew(false)
   }
 
-  const handleDelete = (id: number) => {
-    setDishes(dishes.filter((d) => d.id !== id))
+  const handleDelete = async (id: string) => {
+    try {
+      const res = await fetch(`/api/menu/items/${id}`, { method: "DELETE" })
+      if (!res.ok) {
+        toast.error("Failed to delete dish")
+        return
+      }
+      toast.success("Dish deleted")
+      await fetchMenu()
+    } catch {
+      toast.error("Network error")
+    }
   }
 
-  const toggleAvailability = (id: number) => {
-    setDishes(dishes.map((d) => (d.id === id ? { ...d, available: !d.available } : d)))
+  if (menuLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-muted-foreground text-sm">Loading menu...</div>
+      </div>
+    )
   }
 
   return (
@@ -291,7 +405,7 @@ export default function MenuManagementPage() {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {categories.map((cat) => (
+                          {menuCategories.map((cat) => (
                               <SelectItem key={cat} value={cat}>
                                 {cat}
                               </SelectItem>
@@ -508,9 +622,7 @@ export default function MenuManagementPage() {
                 <SheetClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </SheetClose>
-                <SheetClose asChild>
-                  <Button onClick={handleSave}>Save Dish</Button>
-                </SheetClose>
+                <Button onClick={handleSave}>Save Dish</Button>
               </SheetFooter>
             </SheetContent>
           </Sheet>
@@ -525,7 +637,7 @@ export default function MenuManagementPage() {
           >
             All
           </Button>
-          {categories.map((cat) => (
+          {menuCategories.map((cat) => (
             <Button
               key={cat}
               variant={selectedCategory === cat ? "default" : "outline"}
@@ -583,7 +695,7 @@ export default function MenuManagementPage() {
                   <TableCell>
                     <Switch
                       checked={dish.available}
-                      onCheckedChange={() => toggleAvailability(dish.id)}
+                      disabled
                     />
                   </TableCell>
                   <TableCell>

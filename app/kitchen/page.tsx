@@ -97,7 +97,7 @@ export default function KitchenDisplaySystem() {
       } else {
         toast.error('Failed to update status')
       }
-    } catch (error) {
+    } catch {
       toast.error('Network error')
     }
   }

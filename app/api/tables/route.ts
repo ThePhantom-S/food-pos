@@ -1,5 +1,16 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
+
+type TableWithActiveOrders = Prisma.TableGetPayload<{
+  include: {
+    orders: {
+      where: { status: { in: ['NEW', 'PREPARING', 'READY'] } }
+      take: 1
+      select: { id: true }
+    }
+  }
+}>
 
 export async function GET() {
   try {
@@ -17,11 +28,10 @@ export async function GET() {
       }
     })
 
-    const data = tables.map((table: any) => ({
+    const data = (tables as TableWithActiveOrders[]).map((table) => ({
       id: table.id,
-      status: table.orders.length > 0 ? 'OCCUPIED' : 'AVAILABLE',
-      guests: 2 + Math.floor(Math.random() * 4), // Mock guests
-      server: table.orders.length > 0 ? ['Priya', 'Kumar', 'Lakshmi', 'Ravi'][Math.floor(Math.random()*4)] : null
+      status: table.status,
+      activeOrderId: table.orders[0]?.id ?? null,
     }))
 
     return NextResponse.json(data)

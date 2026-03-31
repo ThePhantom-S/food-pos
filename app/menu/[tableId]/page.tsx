@@ -103,7 +103,7 @@ export default function CustomerMenuPage({
         const items = data.flatMap(cat => cat.items)
         setAllItems(items)
       }
-    } catch (error) {
+    } catch {
       toast.error('Failed to fetch menu')
     } finally {
       setLoading(false)
@@ -198,7 +198,7 @@ export default function CustomerMenuPage({
       } else {
         toast.error('Failed to place order')
       }
-    } catch (error) {
+    } catch {
       toast.error('Network error')
     } finally {
       setPlacingOrder(false)

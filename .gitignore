@@ -13,5 +13,7 @@ next.user-config.*
 # Common ignores
 node_modules
 .next/
+.pnpm-store/
+tsconfig.tsbuildinfo
 .DS_Store
 /lib/generated/prisma

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import type { OrderStatus } from '@prisma/client'
 
 export async function PATCH(
   request: Request,
@@ -7,7 +8,8 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    const { status } = await request.json()
+    const body: unknown = await request.json()
+    const { status } = (body ?? {}) as { status?: OrderStatus }
 
     if (!status || !['NEW', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'].includes(status)) {
       return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
@@ -15,7 +17,7 @@ export async function PATCH(
 
     const order = await prisma.order.update({
       where: { id },
-      data: { status: status as any },
+      data: { status },
       include: { table: true }
     })
 

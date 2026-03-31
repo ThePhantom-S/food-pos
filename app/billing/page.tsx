@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   ArrowLeft,
@@ -9,7 +9,6 @@ import {
   QrCode,
   Hand,
   Check,
-  CreditCard,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,101 +16,52 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { toast } from "sonner"
 
-// Mock data for tables with open bills
-const mockTableBills = [
-  {
-    id: 1,
-    tableNo: 3,
-    itemsCount: 4,
-    total: 680,
-    timeSinceOrder: "45 min",
-    server: "Priya",
-    items: [
-      { name: "Masala Dosa", qty: 2, price: 120, customizations: "Extra chutney" },
-      { name: "Filter Coffee", qty: 2, price: 60, customizations: null },
-      { name: "Sambar Vada", qty: 1, price: 80, customizations: "Less spicy" },
-      { name: "Kesari Bath", qty: 1, price: 70, customizations: null },
-    ],
-    paymentStatus: "PENDING",
-  },
-  {
-    id: 2,
-    tableNo: 7,
-    itemsCount: 2,
-    total: 240,
-    timeSinceOrder: "20 min",
-    server: "Kumar",
-    items: [
-      { name: "Idli Sambar", qty: 1, price: 80, customizations: null },
-      { name: "Medu Vada", qty: 2, price: 100, customizations: "Crispy" },
-      { name: "Tea", qty: 1, price: 30, customizations: null },
-    ],
-    paymentStatus: "PENDING",
-  },
-  {
-    id: 3,
-    tableNo: 1,
-    itemsCount: 5,
-    total: 950,
-    timeSinceOrder: "1 hr 10 min",
-    server: "Lakshmi",
-    items: [
-      { name: "Ghee Roast Dosa", qty: 2, price: 150, customizations: "Extra ghee" },
-      { name: "Curd Rice", qty: 1, price: 90, customizations: null },
-      { name: "Rasam", qty: 2, price: 60, customizations: "Extra pepper" },
-      { name: "Payasam", qty: 2, price: 120, customizations: null },
-      { name: "Filter Coffee", qty: 3, price: 90, customizations: null },
-    ],
-    paymentStatus: "PENDING",
-  },
-  {
-    id: 4,
-    tableNo: 5,
-    itemsCount: 3,
-    total: 420,
-    timeSinceOrder: "35 min",
-    server: "Ravi",
-    items: [
-      { name: "Pongal", qty: 2, price: 140, customizations: "More cashews" },
-      { name: "Uttapam", qty: 1, price: 110, customizations: "Extra onion" },
-      { name: "Badam Milk", qty: 2, price: 100, customizations: null },
-    ],
-    paymentStatus: "PAID",
-  },
-  {
-    id: 5,
-    tableNo: 9,
-    itemsCount: 2,
-    total: 280,
-    timeSinceOrder: "15 min",
-    server: "Priya",
-    items: [
-      { name: "Rava Dosa", qty: 1, price: 130, customizations: "Without onion" },
-      { name: "Mysore Pak", qty: 2, price: 80, customizations: null },
-      { name: "Tea", qty: 2, price: 60, customizations: null },
-    ],
-    paymentStatus: "MANUAL CONFIRMED",
-  },
-]
-
-type TableBill = (typeof mockTableBills)[0]
+type TableBill = {
+  orderId: string
+  tableNo: number
+  itemsCount: number
+  subtotal: number
+  gst: number
+  total: number
+  timeSinceOrder: string
+  paymentStatus: "NONE" | "PENDING" | "PAID" | "CANCELLED"
+  items: { name: string; qty: number; price: number; customizations: string | null }[]
+}
 
 function getPaymentBadgeStyles(status: string) {
   switch (status) {
     case "PAID":
       return "bg-primary/10 text-primary border-primary/20"
-    case "MANUAL CONFIRMED":
-      return "bg-amber-100 text-amber-700 border-amber-200"
     default:
       return "bg-muted text-muted-foreground"
   }
 }
 
 export default function BillingDashboard() {
+  const [tableBills, setTableBills] = useState<TableBill[]>([])
   const [selectedTable, setSelectedTable] = useState<TableBill | null>(null)
   const [discount, setDiscount] = useState<string>("0")
   const [showQR, setShowQR] = useState(false)
+
+  useEffect(() => {
+    const fetchBilling = async () => {
+      try {
+        const res = await fetch("/api/billing", { cache: "no-store" })
+        if (!res.ok) return
+        const data: TableBill[] = await res.json()
+        setTableBills(data)
+        setSelectedTable((prev) => (prev ? data.find((t) => t.orderId === prev.orderId) ?? prev : prev))
+      } catch {
+        // ignore
+      }
+    }
+
+    fetchBilling()
+    const t = setInterval(fetchBilling, 10000)
+    return () => clearInterval(t)
+  }, [])
 
   const calculateBill = (table: TableBill) => {
     const subtotal = table.items.reduce((sum, item) => sum + item.price * item.qty, 0)
@@ -119,6 +69,21 @@ export default function BillingDashboard() {
     const discountAmount = parseFloat(discount) || 0
     const total = subtotal + gst - discountAmount
     return { subtotal, gst, discountAmount, total }
+  }
+
+  const markPaid = async (orderId: string) => {
+    const discountValue = parseFloat(discount) || 0
+    try {
+      const res = await fetch("/api/billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId, discount: discountValue }),
+      })
+      if (res.ok) toast.success("Marked as paid")
+      else toast.error("Failed to mark paid")
+    } catch {
+      toast.error("Network error")
+    }
   }
 
   return (
@@ -144,11 +109,11 @@ export default function BillingDashboard() {
             Active Tables with Open Bills
           </h2>
           <div className="space-y-3">
-            {mockTableBills.map((table) => (
+            {tableBills.map((table) => (
               <Card
-                key={table.id}
+                key={table.orderId}
                 className={`cursor-pointer transition-all hover:shadow-md ${
-                  selectedTable?.id === table.id ? "ring-2 ring-primary" : ""
+                  selectedTable?.orderId === table.orderId ? "ring-2 ring-primary" : ""
                 }`}
                 onClick={() => {
                   setSelectedTable(table)
@@ -175,7 +140,7 @@ export default function BillingDashboard() {
                           </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                          {table.itemsCount} items &bull; Server: {table.server}
+                          {table.itemsCount} items
                         </p>
                         <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
                           <Clock className="h-3 w-3" />
@@ -207,6 +172,9 @@ export default function BillingDashboard() {
                 </CardContent>
               </Card>
             ))}
+            {tableBills.length === 0 && (
+              <div className="text-sm text-muted-foreground">No open bills yet.</div>
+            )}
           </div>
         </div>
       </div>
@@ -220,7 +188,7 @@ export default function BillingDashboard() {
                 <h2 className="text-xl font-bold text-card-foreground">
                   Table {selectedTable.tableNo} Bill
                 </h2>
-                <p className="text-sm text-muted-foreground">Server: {selectedTable.server}</p>
+                <p className="text-sm text-muted-foreground">Order: {selectedTable.orderId.slice(-6)}</p>
               </div>
               <Badge
                 variant="outline"
@@ -260,7 +228,7 @@ export default function BillingDashboard() {
             <Card className="mb-6">
               <CardContent className="p-4">
                 {(() => {
-                  const { subtotal, gst, discountAmount, total } = calculateBill(selectedTable)
+                  const { subtotal, gst, total } = calculateBill(selectedTable)
                   return (
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
@@ -335,9 +303,10 @@ export default function BillingDashboard() {
                   variant="outline"
                   className="w-full gap-2 border-amber-300 text-amber-700 hover:bg-amber-50 hover:text-amber-800"
                   size="lg"
+                  onClick={() => markPaid(selectedTable.orderId)}
                 >
                   <Hand className="h-5 w-5" />
-                  Manual Confirm (Offline)
+                  Mark Paid (Cash/Card)
                 </Button>
               </div>
             )}
@@ -350,13 +319,6 @@ export default function BillingDashboard() {
               </div>
             )}
 
-            {selectedTable.paymentStatus === "MANUAL CONFIRMED" && (
-              <div className="text-center p-6 bg-amber-50 rounded-lg">
-                <CreditCard className="h-12 w-12 text-amber-600 mx-auto mb-2" />
-                <p className="font-semibold text-amber-700">Manually Confirmed</p>
-                <p className="text-sm text-amber-600">Cash / Card payment received</p>
-              </div>
-            )}
           </div>
         ) : (
           <div className="h-full flex items-center justify-center p-6">

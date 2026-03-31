@@ -1,15 +1,27 @@
 import { prisma } from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 
+type CreateOrderItemInput = {
+  itemId: string
+  qty: number
+  price: number
+  spiceLevel?: string | null
+  extras?: unknown
+}
+
 export async function POST(request: Request) {
   try {
-    const { tableId, items } = await request.json()
+    const body: unknown = await request.json()
+    const { tableId, items } = (body ?? {}) as {
+      tableId?: number
+      items?: CreateOrderItemInput[]
+    }
 
     if (!tableId || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'Invalid input' }, { status: 400 })
     }
 
-    const subtotal = items.reduce((sum: number, i: any) => sum + (i.price * i.qty), 0)
+    const subtotal = items.reduce((sum, i) => sum + i.price * i.qty, 0)
 
     const order = await prisma.order.create({
       data: {
@@ -22,13 +34,13 @@ export async function POST(request: Request) {
       }
     })
 
-    const orderItemsData = items.map((i: any) => ({
+    const orderItemsData = items.map((i) => ({
       orderId: order.id,
       itemId: i.itemId,
       qty: i.qty,
       price: i.price,
-      customizations: i.spiceLevel,
-      extras: i.extras || {}
+      customizations: i.spiceLevel ?? null,
+      extras: i.extras ?? {}
     }))
 
     await prisma.orderItem.createMany({
